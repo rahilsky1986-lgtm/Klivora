@@ -11,7 +11,9 @@
       "resizeMode": "contain",
       "backgroundColor": "#2D6BE4"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.klivora.app"
@@ -25,7 +27,9 @@
       "permissions": [
         "CAMERA",
         "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE"
+        "WRITE_EXTERNAL_STORAGE",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -36,7 +40,9 @@
       "expo-router",
       [
         "expo-camera",
-        { "cameraPermission": "Klivora needs camera access to scan receipts." }
+        {
+          "cameraPermission": "Klivora needs camera access to scan receipts."
+        }
       ],
       [
         "expo-notifications",
@@ -47,6 +53,16 @@
       ]
     ],
     "scheme": "klivora",
-    "experiments": { "typedRoutes": true }
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "d87388ac-c36d-4f52-92e8-49d1ad8904f9"
+      }
+    }
   }
 }

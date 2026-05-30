@@ -10,10 +10,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     
-    # This points exactly to your folder location from the screenshot
     defaults:
       run:
-        working-directory: ./packages/web
+        # Changed from ./packages/web to packages/web
+        working-directory: packages/web
 
     steps:
     - name: Checkout Code
@@ -33,5 +33,4 @@ jobs:
       run: pnpm install --no-frozen-lockfile
       
     - name: Run Project Build
-      # Moving the flag here ensures Vite doesn't crash
       run: pnpm run --if-present build

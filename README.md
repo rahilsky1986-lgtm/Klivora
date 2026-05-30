@@ -82,3 +82,44 @@ cd mobile && npx expo start
 ## License
 
 MIT — free to use, modify, and distribute.
+
+## Milestone 3: Build and Packaging Validation
+
+### Validation Commands
+
+```bash
+# Web
+cd web && npm run build
+
+# Mobile type safety
+cd ../mobile && npx tsc --noEmit
+
+# Mobile web export package check
+cd ../mobile && npx expo export --platform web
+
+# Backend syntax check
+cd ../backend && node --check src/index.js
+
+# Backend tests
+cd ../backend && npm test
+```
+
+### Current Validation Status (2026-05-25)
+
+- `web` build: PASS (`vite build` completed; largest chunk still > 500 kB warning)
+- `mobile` type-check: PASS (`npx tsc --noEmit`)
+- `mobile` web export: FAIL (`react-native-web` missing)
+- `backend` syntax check: PASS (`node --check src/index.js`)
+- `backend` tests: FAIL (`jest` command not found; test runner not installed/configured)
+
+### Packaging Notes
+
+- Mobile web export dependency gap:
+  - Install with `cd mobile && npx expo install react-native-web`
+  - Re-run `npx expo export --platform web`
+- Backend test pipeline gap:
+  - Add `jest` to `backend` dev dependencies and baseline config
+  - Re-run `cd backend && npm test`
+- Web bundle optimization follow-up:
+  - Remaining warning is from a chunk around ~603 kB after minification
+  - Next optimization slice should add Vite `manualChunks` to split vendor bundles further

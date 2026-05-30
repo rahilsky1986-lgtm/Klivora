@@ -1,16 +1,30 @@
 import 'react-native-url-polyfill/auto';
-import { Stack } from 'expo-router';
+import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useEffect } from 'react';
 import * as SplashScreen from 'expo-splash-screen';
+import { getAccessToken, setUnauthorizedHandler } from '../lib/api';
 
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   useEffect(() => {
-    SplashScreen.hideAsync();
+    const bootstrap = async () => {
+      const token = await getAccessToken();
+      router.replace(token ? '/(tabs)' : '/(auth)/index');
+      await SplashScreen.hideAsync();
+    };
+    bootstrap();
+
+    setUnauthorizedHandler(() => {
+      router.replace('/(auth)/index' as any);
+    });
+
+    return () => {
+      setUnauthorizedHandler(null);
+    };
   }, []);
 
   return (

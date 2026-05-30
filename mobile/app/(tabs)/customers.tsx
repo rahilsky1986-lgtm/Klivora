@@ -1,27 +1,64 @@
-import { useEffect, useState } from 'react';
-import { ScrollView, View, Text, StyleSheet, TextInput, RefreshControl } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { ScrollView, View, Text, StyleSheet, TextInput, RefreshControl, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import axios from 'axios';
 import { Colors, Spacing, Radius, Shadow } from '../../constants/Colors';
-
-const API = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3001/api';
+import { getErrorMessage, getWithRetry } from '../../lib/api';
 
 const getInitials = (name: string) => name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
+
+type Filter = 'all' | 'with_email' | 'with_phone';
 
 export default function CustomersScreen() {
   const [customers, setCustomers] = useState<any[]>([]);
   const [search, setSearch] = useState('');
+  const [query, setQuery] = useState('');
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [filter, setFilter] = useState<Filter>('all');
+  const [error, setError] = useState<string | null>(null);
+  const requestRef = useRef(0);
 
   const load = async () => {
+    const requestId = ++requestRef.current;
     try {
-      const res = await axios.get(`${API}/customers`, { params: { limit: 50, search: search || undefined } });
-      setCustomers(res.data.data || []);
-    } catch {}
+      setError(null);
+      setLoading(true);
+      const res = await getWithRetry<{ data: any[] }>('/customers', { params: { limit: 50, search: query || undefined } });
+      const rows = (res.data.data || []) as any[];
+      const filtered = rows.filter((row) => {
+        if (filter === 'with_email') return Boolean(row.email);
+        if (filter === 'with_phone') return Boolean(row.phone);
+        return true;
+      });
+      if (requestId === requestRef.current) {
+        setCustomers(filtered);
+      }
+    } catch (err) {
+      if (requestId === requestRef.current) {
+        setError(getErrorMessage(err, 'Could not load customers.'));
+      }
+    }
+    finally {
+      if (requestId === requestRef.current) {
+        setLoading(false);
+      }
+    }
   };
 
-  useEffect(() => { load(); }, [search]);
-  const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
+  useEffect(() => {
+    const timer = setTimeout(() => setQuery(search.trim()), 250);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => { load(); }, [query, filter]);
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await load();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -38,6 +75,17 @@ export default function CustomersScreen() {
           value={search}
           onChangeText={setSearch}
         />
+        <View style={styles.filterRow}>
+          <TouchableOpacity style={[styles.filterChip, filter === 'all' && styles.filterChipActive]} onPress={() => setFilter('all')}>
+            <Text style={[styles.filterText, filter === 'all' && styles.filterTextActive]}>All</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.filterChip, filter === 'with_email' && styles.filterChipActive]} onPress={() => setFilter('with_email')}>
+            <Text style={[styles.filterText, filter === 'with_email' && styles.filterTextActive]}>With email</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.filterChip, filter === 'with_phone' && styles.filterChipActive]} onPress={() => setFilter('with_phone')}>
+            <Text style={[styles.filterText, filter === 'with_phone' && styles.filterTextActive]}>With phone</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
@@ -45,9 +93,20 @@ export default function CustomersScreen() {
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
       >
-        {customers.length === 0 ? (
+        {!!error && (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorText}>{error}</Text>
+            <TouchableOpacity onPress={load} style={styles.errorRetry}>
+              <Text style={styles.errorRetryText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        {loading ? (
           <View style={styles.empty}>
-            <Text style={{ fontSize: 48, marginBottom: 12 }}>👥</Text>
+            <Text style={styles.emptySub}>Loading customers...</Text>
+          </View>
+        ) : customers.length === 0 ? (
+          <View style={styles.empty}>
             <Text style={styles.emptyTitle}>No customers</Text>
             <Text style={styles.emptySub}>Add customers from the web app</Text>
           </View>
@@ -77,6 +136,11 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 13, color: Colors.text2, marginTop: 2 },
   searchContainer: { paddingHorizontal: Spacing.lg, paddingVertical: 12, backgroundColor: Colors.surface, borderBottomWidth: 1, borderBottomColor: Colors.border },
   searchInput: { backgroundColor: Colors.surface2, borderRadius: Radius.md, paddingHorizontal: Spacing.md, height: 42, fontSize: 14, color: Colors.text, borderWidth: 1.5, borderColor: Colors.border },
+  filterRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  filterChip: { borderWidth: 1, borderColor: Colors.border, borderRadius: Radius.full, paddingHorizontal: 12, paddingVertical: 6 },
+  filterChipActive: { borderColor: Colors.primary, backgroundColor: Colors.primaryBg },
+  filterText: { fontSize: 12, color: Colors.text2, fontWeight: '600' },
+  filterTextActive: { color: Colors.primary },
   scroll: { flex: 1 },
   content: { padding: Spacing.lg, paddingBottom: 40 },
   card: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, backgroundColor: Colors.surface, borderRadius: Radius.md, padding: Spacing.md, marginBottom: Spacing.sm, ...Shadow.sm },
@@ -89,4 +153,8 @@ const styles = StyleSheet.create({
   empty: { alignItems: 'center', paddingTop: 80 },
   emptyTitle: { fontSize: 18, fontWeight: '700', color: Colors.text, marginBottom: 8 },
   emptySub: { fontSize: 14, color: Colors.text2, textAlign: 'center' },
+  errorBox: { backgroundColor: '#FFECEE', borderColor: '#FFD3D8', borderWidth: 1, borderRadius: Radius.md, padding: Spacing.md, marginBottom: Spacing.md },
+  errorText: { color: Colors.danger, fontSize: 13, fontWeight: '600' },
+  errorRetry: { marginTop: 8, alignSelf: 'flex-start', backgroundColor: Colors.danger, borderRadius: Radius.sm, paddingHorizontal: 10, paddingVertical: 6 },
+  errorRetryText: { color: 'white', fontSize: 12, fontWeight: '700' },
 });

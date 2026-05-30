@@ -11,7 +11,7 @@
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "2.2.0",
-    "@react-navigation/native": "^6.1.9",
+    "@react-navigation/native": "^7.2.4",
     "@supabase/supabase-js": "^2.39.7",
     "axios": "^1.6.7",
     "date-fns": "^3.3.1",
@@ -36,7 +36,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",
-    "@types/react": "~18.2.45",
+    "@types/react": "~19.2.10",
     "typescript": "^5.1.3"
   }
 }

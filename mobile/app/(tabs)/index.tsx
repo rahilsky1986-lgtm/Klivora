@@ -1,10 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ScrollView, View, Text, StyleSheet, TouchableOpacity, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import axios from 'axios';
 import { Colors, Spacing, Radius, Shadow } from '../../constants/Colors';
-
-const API = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3001/api';
+import { getErrorMessage, getWithRetry } from '../../lib/api';
 
 const fmt = (cents: number, currency = 'USD') => {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format((cents || 0) / 100);
@@ -21,18 +19,40 @@ interface Summary {
 
 export default function DashboardScreen() {
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const requestRef = useRef(0);
 
   const load = async () => {
+    const requestId = ++requestRef.current;
     try {
-      const res = await axios.get(`${API}/reports/dashboard-summary`);
-      setSummary(res.data);
-    } catch {}
+      setError(null);
+      const res = await getWithRetry<Summary>('/reports/dashboard-summary');
+      if (requestId === requestRef.current) {
+        setSummary(res.data);
+      }
+    } catch (err) {
+      if (requestId === requestRef.current) {
+        setError(getErrorMessage(err, 'Could not load dashboard summary.'));
+      }
+    } finally {
+      if (requestId === requestRef.current) {
+        setLoading(false);
+      }
+    }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { setLoading(true); load(); }, []);
 
-  const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await load();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const StatCard = ({ label, value, color = Colors.primary }: { label: string; value: string; color?: string }) => (
     <View style={[styles.statCard, { borderLeftColor: color }]}>
@@ -48,7 +68,6 @@ export default function DashboardScreen() {
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
       >
-        {/* Header */}
         <View style={styles.header}>
           <View style={styles.logo}>
             <Text style={styles.logoText}>C</Text>
@@ -56,18 +75,31 @@ export default function DashboardScreen() {
           <Text style={styles.headerTitle}>Klivora</Text>
         </View>
 
-        <Text style={styles.greeting}>Good {getGreeting()}! 👋</Text>
-        <Text style={styles.greetingSub}>Here's your overview</Text>
+        <Text style={styles.greeting}>Good {getGreeting()}!</Text>
+        <Text style={styles.greetingSub}>Here is your overview</Text>
 
-        {/* Stats */}
-        <View style={styles.statsGrid}>
-          <StatCard label="Total Revenue" value={fmt(summary?.total_revenue)} color={Colors.accent} />
-          <StatCard label="Outstanding" value={fmt(summary?.outstanding)} color={Colors.primary} />
-          <StatCard label="Overdue" value={fmt(summary?.overdue)} color={Colors.danger} />
-          <StatCard label="Expenses" value={fmt(summary?.total_expenses)} color={Colors.warning} />
-        </View>
+        {!!error && (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorText}>{error}</Text>
+            <TouchableOpacity onPress={load} style={styles.errorRetry}>
+              <Text style={styles.errorRetryText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
-        {/* Recent Invoices */}
+        {loading ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyText}>Loading dashboard...</Text>
+          </View>
+        ) : (
+          <View style={styles.statsGrid}>
+            <StatCard label="Total Revenue" value={fmt(summary?.total_revenue)} color={Colors.accent} />
+            <StatCard label="Outstanding" value={fmt(summary?.outstanding)} color={Colors.primary} />
+            <StatCard label="Overdue" value={fmt(summary?.overdue)} color={Colors.danger} />
+            <StatCard label="Expenses" value={fmt(summary?.total_expenses)} color={Colors.warning} />
+          </View>
+        )}
+
         {(summary?.recent_invoices?.length ?? 0) > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Recent Invoices</Text>
@@ -75,7 +107,7 @@ export default function DashboardScreen() {
               <View key={inv.id} style={styles.listItem}>
                 <View>
                   <Text style={styles.listItemTitle}>{inv.invoice_number}</Text>
-                  <Text style={styles.listItemSub}>{inv.customers?.name || '—'}</Text>
+                  <Text style={styles.listItemSub}>{inv.customers?.name || '-'}</Text>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
                   <Text style={styles.listItemAmount}>{fmt(inv.total, inv.currency)}</Text>
@@ -88,10 +120,8 @@ export default function DashboardScreen() {
           </View>
         )}
 
-        {/* Empty state */}
-        {!summary && (
+        {!summary && !error && !loading && (
           <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>📊</Text>
             <Text style={styles.emptyText}>Connect your account to see data</Text>
           </View>
         )}
@@ -133,6 +163,9 @@ const styles = StyleSheet.create({
   badge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: Radius.full },
   badgeText: { fontSize: 11, fontWeight: '600', textTransform: 'capitalize' },
   emptyState: { alignItems: 'center', paddingTop: 64 },
-  emptyIcon: { fontSize: 48, marginBottom: 12 },
   emptyText: { fontSize: 14, color: Colors.text2, textAlign: 'center' },
+  errorBox: { backgroundColor: '#FFECEE', borderColor: '#FFD3D8', borderWidth: 1, borderRadius: Radius.md, padding: Spacing.md, marginBottom: Spacing.md },
+  errorText: { color: Colors.danger, fontSize: 13, fontWeight: '600' },
+  errorRetry: { marginTop: 8, alignSelf: 'flex-start', backgroundColor: Colors.danger, borderRadius: Radius.sm, paddingHorizontal: 10, paddingVertical: 6 },
+  errorRetryText: { color: 'white', fontSize: 12, fontWeight: '700' },
 });

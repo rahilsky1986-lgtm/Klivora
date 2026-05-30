@@ -1,25 +1,35 @@
+import { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext.jsx';
 import AppLayout from './components/layout/AppLayout.jsx';
 
-// Pages
-import Landing from './pages/Landing/index.jsx';
-import Login from './pages/Auth/Login.jsx';
-import Register from './pages/Auth/Register.jsx';
-import ForgotPassword from './pages/Auth/ForgotPassword.jsx';
-import Onboarding from './pages/Auth/Onboarding.jsx';
-import Dashboard from './pages/Dashboard/index.jsx';
-import Invoices from './pages/Invoices/index.jsx';
-import InvoiceForm from './pages/Invoices/InvoiceForm.jsx';
-import InvoiceDetail from './pages/Invoices/InvoiceDetail.jsx';
-import Customers from './pages/Customers/index.jsx';
-import CustomerDetail from './pages/Customers/CustomerDetail.jsx';
-import Expenses from './pages/Expenses/index.jsx';
-import Accounting from './pages/Accounting/index.jsx';
-import Payroll from './pages/Payroll/index.jsx';
-import Reports from './pages/Reports/index.jsx';
-import Settings from './pages/Settings/index.jsx';
+// Pages (route-level chunks)
+const Landing = lazy(() => import('./pages/Landing/index.jsx'));
+const Login = lazy(() => import('./pages/Auth/Login.jsx'));
+const Register = lazy(() => import('./pages/Auth/Register.jsx'));
+const ForgotPassword = lazy(() => import('./pages/Auth/ForgotPassword.jsx'));
+const Onboarding = lazy(() => import('./pages/Auth/Onboarding.jsx'));
+const Dashboard = lazy(() => import('./pages/Dashboard/index.jsx'));
+const Invoices = lazy(() => import('./pages/Invoices/index.jsx'));
+const InvoiceForm = lazy(() => import('./pages/Invoices/InvoiceForm.jsx'));
+const InvoiceDetail = lazy(() => import('./pages/Invoices/InvoiceDetail.jsx'));
+const Customers = lazy(() => import('./pages/Customers/index.jsx'));
+const CustomerDetail = lazy(() => import('./pages/Customers/CustomerDetail.jsx'));
+const Expenses = lazy(() => import('./pages/Expenses/index.jsx'));
+const Accounting = lazy(() => import('./pages/Accounting/index.jsx'));
+const Payroll = lazy(() => import('./pages/Payroll/index.jsx'));
+const Reports = lazy(() => import('./pages/Reports/index.jsx'));
+const Settings = lazy(() => import('./pages/Settings/index.jsx'));
+
+const PageLoader = () => (
+  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--background)' }}>
+    <div style={{ textAlign: 'center' }}>
+      <div style={{ width: 40, height: 40, border: '3px solid var(--primary)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 16px' }} />
+      <p style={{ color: 'var(--text-2)', fontSize: 14 }}>Loading page...</p>
+    </div>
+  </div>
+);
 
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth();
@@ -47,7 +57,8 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <Routes>
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
           {/* Public */}
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
@@ -72,7 +83,8 @@ export default function App() {
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+          </Routes>
+        </Suspense>
       </BrowserRouter>
       <Toaster
         position="top-right"

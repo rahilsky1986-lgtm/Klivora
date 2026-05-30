@@ -9,11 +9,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
-    defaults:
-      run:
-        # Changed from ./packages/web to packages/web
-        working-directory: packages/web
 
     steps:
     - name: Checkout Code
@@ -33,4 +28,4 @@ jobs:
       run: pnpm install --no-frozen-lockfile
       
     - name: Run Project Build
-      run: pnpm run --if-present build
+      run: pnpm --filter web build

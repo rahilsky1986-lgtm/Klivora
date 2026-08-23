@@ -1,3 +1,7 @@
-// Stripe is not enabled — payments removed for this region.
-// This file is kept as a placeholder so existing requires don't crash.
-module.exports = null;
+module.exports = {
+  stripe: {
+    secretKey: process.env.STRIPE_SECRET_KEY || null,
+    publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || null,
+    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || null,
+  },
+};

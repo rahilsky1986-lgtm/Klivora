@@ -181,4 +181,184 @@ const taxSummary = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-module.exports = { dashboardSummary, profitLoss, balanceSheet, taxSummary };
+const trialBalance = async (req, res, next) => {
+  try {
+    const userId = req.userId;
+    const { data: accounts } = await supabase
+      .from('accounts')
+      .select('id, name, type, code, transactions(amount, type)')
+      .eq('user_id', userId)
+      .order('code');
+
+    const result = accounts?.map((acc) => {
+      const balance = acc.transactions?.reduce((s, t) => {
+        return t.type === 'debit' ? s + t.amount : s - t.amount;
+      }, 0) || 0;
+
+      let debit = 0;
+      let credit = 0;
+      if (['asset', 'expense'].includes(acc.type)) {
+        if (balance >= 0) debit = balance;
+        else credit = Math.abs(balance);
+      } else {
+        if (balance >= 0) credit = balance;
+        else debit = Math.abs(balance);
+      }
+
+      return {
+        account_id: acc.id,
+        account_code: acc.code,
+        account_name: acc.name,
+        account_type: acc.type,
+        debit,
+        credit,
+        balance,
+      };
+    }) || [];
+
+    const totalDebits = result.reduce((s, a) => s + a.debit, 0);
+    const totalCredits = result.reduce((s, a) => s + a.credit, 0);
+
+    res.json({
+      accounts: result,
+      total_debits: totalDebits,
+      total_credits: totalCredits,
+      balanced: totalDebits === totalCredits,
+    });
+  } catch (err) { next(err); }
+};
+
+const generalLedger = async (req, res, next) => {
+  try {
+    const userId = req.userId;
+    const { start_date, end_date, account_id } = req.query;
+
+    let query = supabase
+      .from('transactions')
+      .select('*, accounts(name, code, type)')
+      .eq('user_id', userId)
+      .order('date', { ascending: true });
+
+    if (start_date) query = query.gte('date', start_date);
+    if (end_date) query = query.lte('date', end_date);
+    if (account_id) query = query.eq('account_id', account_id);
+
+    const { data: transactions, error } = await query;
+
+    if (error) return res.status(400).json({ error: error.message });
+
+    // Group by account
+    const byAccount = {};
+    transactions?.forEach((txn) => {
+      const accId = txn.account_id || 'no-account';
+      if (!byAccount[accId]) {
+        byAccount[accId] = {
+          account_id: accId,
+          account_name: txn.accounts?.name || 'No Account',
+          account_code: txn.accounts?.code || '',
+          account_type: txn.accounts?.type || '',
+          entries: [],
+          running_balance: 0,
+        };
+      }
+      const entry = {
+        id: txn.id,
+        date: txn.date,
+        description: txn.description,
+        reference: txn.reference,
+        type: txn.type,
+        amount: txn.amount,
+      };
+      byAccount[accId].entries.push(entry);
+    });
+
+    // Calculate running balances
+    Object.values(byAccount).forEach((acc) => {
+      let balance = 0;
+      if (['asset', 'expense'].includes(acc.account_type)) {
+        acc.entries.forEach((e) => {
+          balance += e.type === 'debit' ? e.amount : -e.amount;
+          e.running_balance = balance;
+        });
+      } else {
+        acc.entries.forEach((e) => {
+          balance += e.type === 'credit' ? e.amount : -e.amount;
+          e.running_balance = balance;
+        });
+      }
+    });
+
+    res.json({
+      accounts: Object.values(byAccount),
+    });
+  } catch (err) { next(err); }
+};
+
+const bankReconciliation = async (req, res, next) => {
+  try {
+    const userId = req.userId;
+    const { account_id, statement_date, statement_ending_balance } = req.body;
+
+    if (!account_id || !statement_date || statement_ending_balance === undefined) {
+      return res.status(400).json({ error: 'account_id, statement_date, and statement_ending_balance are required' });
+    }
+
+    const endingBalanceCents = Math.round(parseFloat(statement_ending_balance) * 100);
+
+    // Get account details
+    const { data: account } = await supabase
+      .from('accounts')
+      .select('*, transactions(*)')
+      .eq('id', account_id)
+      .eq('user_id', userId)
+      .single();
+
+    if (!account) return res.status(404).json({ error: 'Account not found' });
+
+    // Get transactions up to statement date
+    const { data: transactions } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('account_id', account_id)
+      .lte('date', statement_date)
+      .order('date', { ascending: true });
+
+    // Calculate book balance
+    let bookBalance = 0;
+    transactions?.forEach((txn) => {
+      if (['asset', 'expense'].includes(account.type)) {
+        bookBalance += txn.type === 'debit' ? txn.amount : -txn.amount;
+      } else {
+        bookBalance += txn.type === 'credit' ? txn.amount : -txn.amount;
+      }
+    });
+
+    const difference = endingBalanceCents - bookBalance;
+
+    // Get uncleared transactions (those after statement date or marked as uncleared)
+    const { data: unclearedTxns } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('account_id', account_id)
+      .gt('date', statement_date)
+      .order('date', { ascending: true });
+
+    res.json({
+      account: {
+        id: account.id,
+        name: account.name,
+        code: account.code,
+        type: account.type,
+      },
+      statement_date,
+      statement_ending_balance: endingBalanceCents,
+      book_balance: bookBalance,
+      difference,
+      reconciled: difference === 0,
+      transactions: transactions || [],
+      uncleared_transactions: unclearedTxns || [],
+    });
+  } catch (err) { next(err); }
+};
+
+module.exports = { dashboardSummary, profitLoss, balanceSheet, taxSummary, trialBalance, generalLedger, bankReconciliation };

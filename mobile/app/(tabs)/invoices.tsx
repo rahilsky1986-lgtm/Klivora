@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { ScrollView, View, Text, StyleSheet, TouchableOpacity, RefreshControl, Alert } from 'react-native';
+import { ScrollView, View, Text, StyleSheet, TouchableOpacity, RefreshControl, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Spacing, Radius, Shadow } from '../../constants/Colors';
 import { getErrorMessage, getWithRetry, patchWithRetry } from '../../lib/api';
-
-const fmt = (cents: number, currency = 'USD') =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency }).format((cents || 0) / 100);
+import { getCustomers } from '../../lib/api';
+import { fmt } from '../../lib/formatters';
+import { Button } from '../../components/ui/Button';
+import InvoiceForm from '../../components/forms/InvoiceForm';
 
 const statusColor: Record<string, string> = {
   paid: Colors.accent,
@@ -18,11 +19,15 @@ const statusColor: Record<string, string> = {
 
 export default function InvoicesScreen() {
   const [invoices, setInvoices] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState('all');
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [currency, setCurrency] = useState('USD');
   const requestRef = useRef(0);
 
   const load = async () => {
@@ -30,9 +35,15 @@ export default function InvoicesScreen() {
     try {
       setError(null);
       const params = filter !== 'all' ? { status: filter } : {};
-      const res = await getWithRetry<{ data: any[] }>('/invoices', { params });
+      const [invRes, custRes] = await Promise.all([
+        getWithRetry<{ data: any[] }>('/invoices', { params }),
+        getCustomers({ limit: 100 }),
+      ]);
       if (requestId === requestRef.current) {
-        setInvoices(res.data.data || []);
+        setInvoices(invRes.data.data || []);
+        const cust = custRes.data.data || [];
+        setCustomers(cust);
+        if (cust.length > 0 && !currency) setCurrency(cust[0].currency || 'USD');
       }
     } catch (err) {
       if (requestId === requestRef.current) {
@@ -77,6 +88,22 @@ export default function InvoicesScreen() {
     }
   };
 
+  const openCreate = () => {
+    setEditingId(null);
+    setFormOpen(true);
+  };
+
+  const openEdit = (id: string) => {
+    setEditingId(id);
+    setFormOpen(true);
+  };
+
+  const handleSave = () => {
+    setFormOpen(false);
+    setEditingId(null);
+    load();
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
@@ -100,6 +127,7 @@ export default function InvoicesScreen() {
       >
         {loading && !refreshing ? (
           <View style={styles.loadingWrap}>
+            <ActivityIndicator color={Colors.primary} size="large" />
             <Text style={styles.loadingText}>Loading invoices...</Text>
           </View>
         ) : null}
@@ -115,9 +143,9 @@ export default function InvoicesScreen() {
 
         {!loading && invoices.length === 0 ? (
           <View style={styles.empty}>
-            <Text style={styles.emptyIcon}>[ ]</Text>
+            <Text style={styles.emptyIcon}>📄</Text>
             <Text style={styles.emptyTitle}>No invoices</Text>
-            <Text style={styles.emptySub}>Create invoices from the web app</Text>
+            <Text style={styles.emptySub}>Tap + to create your first invoice</Text>
           </View>
         ) : (
           invoices.map((inv) => (
@@ -138,6 +166,12 @@ export default function InvoicesScreen() {
                 <Text style={styles.amount}>{fmt(inv.total, inv.currency)}</Text>
               </View>
               <View style={styles.actions}>
+                <TouchableOpacity
+                  onPress={() => openEdit(inv.id)}
+                  style={styles.actionBtnOutline}
+                >
+                  <Text style={styles.actionTextOutline}>Edit</Text>
+                </TouchableOpacity>
                 {inv.status !== 'paid' && (
                   <TouchableOpacity
                     disabled={pendingId === inv.id}
@@ -161,6 +195,21 @@ export default function InvoicesScreen() {
           ))
         )}
       </ScrollView>
+
+      {/* FAB */}
+      <TouchableOpacity onPress={openCreate} style={styles.fab} activeOpacity={0.85}>
+        <Text style={styles.fabText}>+</Text>
+      </TouchableOpacity>
+
+      {/* Invoice Form Modal */}
+      <InvoiceForm
+        open={formOpen}
+        onClose={() => { setFormOpen(false); setEditingId(null); }}
+        onSave={handleSave}
+        invoiceId={editingId}
+        customers={customers}
+        currency={currency}
+      />
     </SafeAreaView>
   );
 }
@@ -181,9 +230,9 @@ const styles = StyleSheet.create({
   filterChipText: { fontSize: 13, fontWeight: '500', color: Colors.text2 },
   filterChipTextActive: { color: Colors.primary, fontWeight: '600' },
   scroll: { flex: 1 },
-  content: { padding: Spacing.lg, paddingBottom: 40 },
+  content: { padding: Spacing.lg, paddingBottom: 100 },
   loadingWrap: { alignItems: 'center', paddingVertical: Spacing.lg },
-  loadingText: { fontSize: 13, fontWeight: '600', color: Colors.text2 },
+  loadingText: { fontSize: 13, fontWeight: '600', color: Colors.text2, marginTop: Spacing.sm },
   card: { backgroundColor: Colors.surface, borderRadius: Radius.md, padding: Spacing.md, marginBottom: Spacing.sm, ...Shadow.sm },
   cardRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   invNumber: { fontSize: 15, fontWeight: '700', color: Colors.primary },
@@ -194,12 +243,14 @@ const styles = StyleSheet.create({
   amount: { fontSize: 15, fontWeight: '800', color: Colors.text },
   actions: { flexDirection: 'row', gap: 8, marginTop: 10 },
   actionBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: Radius.sm },
+  actionBtnOutline: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: Radius.sm, borderWidth: 1.5, borderColor: Colors.border, flex: 1 },
   actionPrimary: { backgroundColor: Colors.primary },
   actionSuccess: { backgroundColor: Colors.accent },
   actionDisabled: { opacity: 0.6 },
-  actionText: { fontSize: 12, fontWeight: '700', color: 'white' },
+  actionText: { fontSize: 12, fontWeight: '700', color: 'white', textAlign: 'center' },
+  actionTextOutline: { fontSize: 12, fontWeight: '600', color: Colors.primary, textAlign: 'center' },
   empty: { alignItems: 'center', paddingTop: 80 },
-  emptyIcon: { fontSize: 30, marginBottom: 12, color: Colors.text3 },
+  emptyIcon: { fontSize: 40, marginBottom: 12 },
   emptyTitle: { fontSize: 18, fontWeight: '700', color: Colors.text, marginBottom: 8 },
   emptySub: { fontSize: 14, color: Colors.text2, textAlign: 'center' },
   errorBox: {
@@ -220,4 +271,17 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   errorRetryText: { color: 'white', fontSize: 12, fontWeight: '700' },
+  fab: {
+    position: 'absolute',
+    right: Spacing.lg,
+    bottom: Spacing.xl,
+    width: 56,
+    height: 56,
+    borderRadius: Radius.full,
+    backgroundColor: Colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...Shadow.md,
+  },
+  fabText: { fontSize: 28, color: 'white', fontWeight: '700', lineHeight: 28 },
 });

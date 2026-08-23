@@ -1,0 +1,117 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database (using Supabase locally or external)
+  # For local development, use Supabase CLI or external Supabase project
+  # This is a placeholder for local Postgres if needed
+  # db:
+  #   image: postgres:16-alpine
+  #   environment:
+  #     POSTGRES_USER: klivora
+  #     POSTGRES_PASSWORD: ${DB_PASSWORD}
+  #     POSTGRES_DB: klivora
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #     - ./database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+  #   ports:
+  #     - "5432:5432"
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U klivora -d klivora"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: klivora-backend
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - FRONTEND_URL=${FRONTEND_URL}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_PUBLISHABLE_KEY=${STRIPE_PUBLISHABLE_KEY}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+      - RESEND_API_KEY=${RESEND_API_KEY}
+      - FROM_EMAIL=${FROM_EMAIL}
+    ports:
+      - "3001:3001"
+    depends_on:
+      # - db
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Web Frontend
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: klivora-web
+    environment:
+      - VITE_API_URL=http://localhost:3001
+      - VITE_SUPABASE_URL=${SUPABASE_URL}
+      - VITE_SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # Redis for caching/sessions (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: klivora-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Cron jobs for recurring invoices and overdue checks
+  cron:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: klivora-cron
+    command: >
+      sh -c "
+        apk add --no-cache curl &&
+        echo '0 0 * * * cd /app && node scripts/process-recurring-invoices.js >> /var/log/cron.log 2>&1' > /etc/crontabs/root &&
+        echo '0 9 * * * cd /app && node scripts/check-overdue-invoices.js >> /var/log/cron.log 2>&1' >> /etc/crontabs/root &&
+        crond -f -l 8
+      "
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+    volumes:
+      - ./backend/scripts:/app/scripts
+      - cron_logs:/var/log
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  # postgres_data:
+  redis_data:
+  cron_logs:
+
+networks:
+  default:
+    name: klivora-network

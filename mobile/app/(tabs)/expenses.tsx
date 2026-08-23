@@ -1,18 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
-import { ScrollView, View, Text, StyleSheet, TouchableOpacity, RefreshControl, Alert } from 'react-native';
+import { ScrollView, View, Text, StyleSheet, TouchableOpacity, RefreshControl, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors, Spacing, Radius, Shadow } from '../../constants/Colors';
-import { getErrorMessage, getWithRetry } from '../../lib/api';
-
-const fmt = (cents: number, currency = 'USD') =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency }).format((cents || 0) / 100);
+import { getErrorMessage, getWithRetry, createExpense, updateExpense, deleteExpense, getExpense } from '../../lib/api';
+import { fmt, toCents, toDollars, today, EXPENSE_CATEGORIES } from '../../lib/formatters';
+import { Button } from '../../components/ui/Button';
+import ExpenseForm from '../../components/forms/ExpenseForm';
 
 export default function ExpensesScreen() {
   const [expenses, setExpenses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [currency, setCurrency] = useState('USD');
   const requestRef = useRef(0);
 
   const load = async () => {
@@ -62,12 +65,40 @@ export default function ExpensesScreen() {
 
   const totalExpenses = expenses.reduce((s: number, e: any) => s + e.amount, 0);
 
+  const openCreate = () => {
+    setEditingId(null);
+    setFormOpen(true);
+  };
+
+  const openEdit = (id: string) => {
+    setEditingId(id);
+    setFormOpen(true);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!Alert.alert('Delete expense?', '', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        try {
+          await deleteExpense(id);
+          load();
+        } catch { Alert.alert('Error', 'Failed to delete expense'); }
+      }},
+    ])) return;
+  };
+
+  const handleSave = () => {
+    setFormOpen(false);
+    setEditingId(null);
+    load();
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>Expenses</Text>
-          <Text style={styles.subtitle}>Total: {fmt(totalExpenses)}</Text>
+          <Text style={styles.subtitle}>Total: {fmt(totalExpenses, currency)}</Text>
         </View>
         <TouchableOpacity style={styles.scanBtn} onPress={handleScanReceipt}>
           <Text style={{ fontSize: 12, fontWeight: '700', color: Colors.primary }}>SCAN</Text>
@@ -89,12 +120,14 @@ export default function ExpensesScreen() {
         )}
         {loading ? (
           <View style={styles.empty}>
+            <ActivityIndicator color={Colors.primary} size="large" />
             <Text style={styles.emptySub}>Loading expenses...</Text>
           </View>
         ) : expenses.length === 0 ? (
           <View style={styles.empty}>
+            <Text style={styles.emptyIcon}>💸</Text>
             <Text style={styles.emptyTitle}>No expenses</Text>
-            <Text style={styles.emptySub}>Add expenses from the web app</Text>
+            <Text style={styles.emptySub}>Tap + to add your first expense</Text>
           </View>
         ) : (
           expenses.map((exp) => (
@@ -103,17 +136,39 @@ export default function ExpensesScreen() {
                 <View style={styles.categoryBadge}>
                   <Text style={styles.categoryText}>{exp.category}</Text>
                 </View>
-                <Text style={styles.amount}>-{fmt(exp.amount)}</Text>
+                <Text style={styles.amount}>-{fmt(exp.amount, exp.currency || currency)}</Text>
               </View>
               <Text style={styles.vendor}>{exp.vendor || exp.description || '-'}</Text>
               <Text style={styles.date}>{new Date(exp.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</Text>
               {exp.receipt_url && (
                 <Text style={styles.receiptTag}>Receipt attached</Text>
               )}
+              <View style={styles.cardActions}>
+                <TouchableOpacity onPress={() => openEdit(exp.id)} style={styles.actionBtnOutline}>
+                  <Text style={styles.actionTextOutline}>Edit</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => handleDelete(exp.id)} style={[styles.actionBtnOutline, styles.actionBtnDanger]}>
+                  <Text style={[styles.actionTextOutline, { color: Colors.danger }]}>Delete</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           ))
         )}
       </ScrollView>
+
+      {/* FAB */}
+      <TouchableOpacity onPress={openCreate} style={styles.fab} activeOpacity={0.85}>
+        <Text style={styles.fabText}>+</Text>
+      </TouchableOpacity>
+
+      {/* Expense Form Modal */}
+      <ExpenseForm
+        open={formOpen}
+        onClose={() => { setFormOpen(false); setEditingId(null); }}
+        onSave={handleSave}
+        expenseId={editingId}
+        currency={currency}
+      />
     </SafeAreaView>
   );
 }
@@ -125,7 +180,7 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 13, color: Colors.text2, marginTop: 2 },
   scanBtn: { minWidth: 52, height: 44, borderRadius: Radius.md, backgroundColor: Colors.primaryBg, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
   scroll: { flex: 1 },
-  content: { padding: Spacing.lg, paddingBottom: 40 },
+  content: { padding: Spacing.lg, paddingBottom: 100 },
   card: { backgroundColor: Colors.surface, borderRadius: Radius.md, padding: Spacing.md, marginBottom: Spacing.sm, ...Shadow.sm },
   cardRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
   categoryBadge: { backgroundColor: Colors.surface2, paddingHorizontal: 10, paddingVertical: 3, borderRadius: Radius.full },
@@ -134,11 +189,29 @@ const styles = StyleSheet.create({
   vendor: { fontSize: 14, fontWeight: '600', color: Colors.text, marginBottom: 4 },
   date: { fontSize: 12, color: Colors.text3 },
   receiptTag: { fontSize: 11, color: Colors.primary, marginTop: 6 },
+  cardActions: { flexDirection: 'row', gap: 8, marginTop: Spacing.md },
+  actionBtnOutline: { flex: 1, paddingVertical: 8, borderRadius: Radius.sm, borderWidth: 1.5, borderColor: Colors.border, alignItems: 'center' },
+  actionBtnDanger: { borderColor: Colors.danger },
+  actionTextOutline: { fontSize: 13, fontWeight: '600', color: Colors.primary },
   empty: { alignItems: 'center', paddingTop: 80 },
+  emptyIcon: { fontSize: 40, marginBottom: 12 },
   emptyTitle: { fontSize: 18, fontWeight: '700', color: Colors.text, marginBottom: 8 },
   emptySub: { fontSize: 14, color: Colors.text2, textAlign: 'center' },
   errorBox: { backgroundColor: '#FFECEE', borderColor: '#FFD3D8', borderWidth: 1, borderRadius: Radius.md, padding: Spacing.md, marginBottom: Spacing.md },
   errorText: { color: Colors.danger, fontSize: 13, fontWeight: '600' },
   errorRetry: { marginTop: 8, alignSelf: 'flex-start', backgroundColor: Colors.danger, borderRadius: Radius.sm, paddingHorizontal: 10, paddingVertical: 6 },
   errorRetryText: { color: 'white', fontSize: 12, fontWeight: '700' },
+  fab: {
+    position: 'absolute',
+    right: Spacing.lg,
+    bottom: Spacing.xl,
+    width: 56,
+    height: 56,
+    borderRadius: Radius.full,
+    backgroundColor: Colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...Shadow.md,
+  },
+  fabText: { fontSize: 28, color: 'white', fontWeight: '700', lineHeight: 28 },
 });

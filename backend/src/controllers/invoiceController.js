@@ -2,6 +2,7 @@ const { supabase } = require('../config/supabase');
 const { generateInvoiceNumber, calculateInvoiceTotals, getPagination } = require('../utils/helpers');
 const emailService = require('../services/emailService');
 const pdfService = require('../services/pdfService');
+const notificationService = require('../services/notificationService');
 
 const list = async (req, res, next) => {
   try {
@@ -217,6 +218,14 @@ const send = async (req, res, next) => {
       .update({ status: 'sent', sent_at: new Date().toISOString() })
       .eq('id', req.params.id);
 
+    // Notify
+    await notificationService.notifyGeneral(
+      req.userId,
+      'Invoice Sent',
+      `Invoice ${invoice.invoice_number} has been sent to ${invoice.customers?.name}`,
+      `/invoices/${req.params.id}`
+    );
+
     res.json({ message: 'Invoice sent successfully' });
   } catch (err) {
     next(err);
@@ -302,6 +311,16 @@ const updateStatus = async (req, res, next) => {
       .single();
 
     if (error) return res.status(400).json({ error: error.message });
+
+    // Notify on status changes
+    if (status === 'paid') {
+      await notificationService.notifyPaymentReceived(req.userId, data, data.total);
+    } else if (status === 'viewed') {
+      await notificationService.notifyInvoiceViewed(req.userId, data);
+    } else if (status === 'overdue') {
+      await notificationService.notifyInvoiceOverdue(req.userId, data);
+    }
+
     res.json(data);
   } catch (err) {
     next(err);

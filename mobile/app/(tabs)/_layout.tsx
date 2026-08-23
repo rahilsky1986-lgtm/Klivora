@@ -51,8 +51,20 @@ export default function TabsLayout() {
         options={{ title: 'Customers', tabBarIcon: ({ focused }) => <TabBarIcon name="people" focused={focused} /> }}
       />
       <Tabs.Screen
-        name="more"
-        options={{ title: 'More', tabBarIcon: ({ focused }) => <TabBarIcon name="menu" focused={focused} /> }}
+        name="payroll"
+        options={{ title: 'Payroll', tabBarIcon: ({ focused }) => <TabBarIcon name="business" focused={focused} /> }}
+      />
+      <Tabs.Screen
+        name="reports"
+        options={{ title: 'Reports', tabBarIcon: ({ focused }) => <TabBarIcon name="bar-chart" focused={focused} /> }}
+      />
+      <Tabs.Screen
+        name="accounting"
+        options={{ title: 'Accounting', tabBarIcon: ({ focused }) => <TabBarIcon name="cash" focused={focused} /> }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{ title: 'Settings', tabBarIcon: ({ focused }) => <TabBarIcon name="settings" focused={focused} /> }}
       />
     </Tabs>
   );

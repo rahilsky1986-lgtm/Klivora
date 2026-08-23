@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense, lazy } from 'react';
 import { getAccounts, createAccount, deleteAccount, getTransactions, createTransaction } from '../../services/api.js';
 import { formatCurrency, formatDate } from '../../utils/formatters.js';
 import { StatusBadge } from '../../components/ui/Badge.jsx';
@@ -6,9 +6,13 @@ import EmptyState, { PageLoader } from '../../components/ui/EmptyState.jsx';
 import Button from '../../components/ui/Button.jsx';
 import Modal from '../../components/ui/Modal.jsx';
 import Input, { Select, Textarea } from '../../components/ui/Input.jsx';
-import { Plus, Trash2, BookOpen, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
+import { Plus, Trash2, BookOpen, ArrowDownCircle, ArrowUpCircle, Calculator, List, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext.jsx';
+
+const TrialBalance = lazy(() => import('./TrialBalance.jsx'));
+const GeneralLedger = lazy(() => import('./GeneralLedger.jsx'));
+const BankReconciliation = lazy(() => import('./BankReconciliation.jsx'));
 
 const ACCOUNT_TYPES = ['asset', 'liability', 'equity', 'income', 'expense'];
 
@@ -80,16 +84,23 @@ export default function Accounting() {
         </div>
       </div>
 
-      {/* Tabs */}
+{/* Tabs */}
       <div style={{ display: 'flex', gap: 0, marginBottom: 24, borderBottom: '2px solid var(--border)' }}>
-        {['accounts', 'transactions'].map((t) => (
-          <button key={t} onClick={() => setTab(t)} style={{
-            padding: '10px 20px', border: 'none', background: 'none', cursor: 'pointer',
-            fontWeight: 600, fontSize: 14, color: tab === t ? 'var(--primary)' : 'var(--text-2)',
-            borderBottom: tab === t ? '2px solid var(--primary)' : '2px solid transparent',
-            marginBottom: -2, transition: 'var(--transition)',
-          }}>{t.charAt(0).toUpperCase() + t.slice(1)}</button>
-        ))}
+        {['accounts', 'transactions', 'trial-balance', 'general-ledger', 'bank-reconciliation'].map((t) => {
+          const label = t === 'trial-balance' ? 'Trial Balance' : t === 'general-ledger' ? 'General Ledger' : t === 'bank-reconciliation' ? 'Bank Reconciliation' : t.charAt(0).toUpperCase() + t.slice(1);
+          const icon = t === 'accounts' ? BookOpen : t === 'transactions' ? List : t === 'trial-balance' ? Calculator : t === 'general-ledger' ? List : RefreshCw;
+          return (
+            <button key={t} onClick={() => setTab(t)} style={{
+              padding: '10px 20px', border: 'none', background: 'none', cursor: 'pointer',
+              fontWeight: 600, fontSize: 14, color: tab === t ? 'var(--primary)' : 'var(--text-2)',
+              borderBottom: tab === t ? '2px solid var(--primary)' : '2px solid transparent',
+              marginBottom: -2, transition: 'var(--transition)', display: 'flex', alignItems: 'center', gap: 6,
+            }}>
+              <icon size={16} />
+              {label}
+            </button>
+          );
+        })}
       </div>
 
       {tab === 'accounts' && (
@@ -148,6 +159,39 @@ export default function Accounting() {
             </table>
           </div>
         )
+      )}
+
+      {/* Account Modal */}
+      <Modal open={modal === 'account'} onClose={() => setModal(null)} title="Add Account"
+        footer={<><Button variant="ghost" onClick={() => setModal(null)}>Cancel</Button><Button variant="primary" loading={saving} onClick={handleSaveAccount}>Create Account</Button></>}>
+        <form onSubmit={handleSaveAccount} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <Select label="Account Type *" value={accountForm.type} onChange={(e) => setAccountForm((f) => ({ ...f, type: e.target.value }))}>
+            {ACCOUNT_TYPES.map((t) => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+          </Select>
+          <Input label="Account Name *" value={accountForm.name} onChange={(e) => setAccountForm((f) => ({ ...f, name: e.target.value }))} placeholder="e.g. Checking Account" />
+          <Input label="Account Code" value={accountForm.code} onChange={(e) => setAccountForm((f) => ({ ...f, code: e.target.value }))} placeholder="e.g. 1010" />
+        </form>
+      </Modal>
+
+      {/* Trial Balance Tab */}
+      {tab === 'trial-balance' && (
+        <Suspense fallback={<PageLoader />}>
+          <TrialBalance />
+        </Suspense>
+      )}
+
+      {/* General Ledger Tab */}
+      {tab === 'general-ledger' && (
+        <Suspense fallback={<PageLoader />}>
+          <GeneralLedger />
+        </Suspense>
+      )}
+
+      {/* Bank Reconciliation Tab */}
+      {tab === 'bank-reconciliation' && (
+        <Suspense fallback={<PageLoader />}>
+          <BankReconciliation />
+        </Suspense>
       )}
 
       {/* Account Modal */}

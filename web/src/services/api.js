@@ -119,6 +119,9 @@ export const downloadPayslip = async (id, employeeName) => {
 export const getProfitLoss = (params) => api.get('/reports/profit-loss', { params });
 export const getBalanceSheet = () => api.get('/reports/balance-sheet');
 export const getTaxSummary = (params) => api.get('/reports/tax-summary', { params });
+export const getTrialBalance = () => api.get('/reports/trial-balance');
+export const getGeneralLedger = (params) => api.get('/reports/general-ledger', { params });
+export const getBankReconciliation = (data) => api.post('/reports/bank-reconciliation', data);
 
 // Payments
 export const createPaymentLink = (invoiceId) => api.post('/payments/create-payment-link', { invoice_id: invoiceId });

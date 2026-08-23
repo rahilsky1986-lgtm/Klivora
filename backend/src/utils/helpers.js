@@ -101,6 +101,13 @@ const fail = (res, message, statusCode = 400) => {
   return res.status(statusCode).json({ error: message });
 };
 
+/**
+ * Get frontend URL from env or default
+ */
+const getFrontendUrl = () => {
+  return process.env.FRONTEND_URL || 'http://localhost:5173';
+};
+
 module.exports = {
   formatCurrency,
   toCents,
@@ -111,4 +118,5 @@ module.exports = {
   getPagination,
   success,
   fail,
+  getFrontendUrl,
 };
